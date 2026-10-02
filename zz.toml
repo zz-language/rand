@@ -1,6 +1,12 @@
 [package]
 name = "rand"
 version = "0.1.0"
+description = "Deterministic random numbers (xoshiro128++), pure ZZ, no dependencies"
+license = "MIT"
+category = "math"
+# No [package] zz bound: the dev line is still versioned 0.1.6, so no
+# requirement can express "post-0.1.6". Needs compound assignment +
+# AOT tuple boxing (dev after 0.1.6); older toolchains reject the file
+# at parse time. Add zz = ">=0.1.7" (or newer) once released.
 
-[dependencies.rand]
-path = "."
+[dependencies]

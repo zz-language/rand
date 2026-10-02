@@ -13,11 +13,12 @@
 //
 // Same seed, same stream — across runs, machines, and backends.
 
-import std.time
 import std.crypto
+import std.time
 
 /// Generator state: four 32-bit words. Never all zero (the seeder uses a
 /// bijective step, so zero occurs at most once across the four words).
+
 pub struct Rng {
     s0: int,
     s1: int,
@@ -34,11 +35,13 @@ func rotl(x: int, k: int) -> int {
 
 // One glibc-LCG step, masked to 32 bits. Max product
 // 4294967295 * 1103515245 stays under 2^63 — no trap.
+
 func lcg(s: int) -> int {
     (s * 1103515245 + 12345) & MASK
 }
 
 /// Deterministic generator from one integer.
+
 pub func seed(n: int) -> Rng {
     s := lcg(n & MASK)
     s0 := s
@@ -47,11 +50,12 @@ pub func seed(n: int) -> Rng {
     s = lcg(s)
     s2 := s
     s = lcg(s)
-    Rng{ s0: s0, s1: s1, s2: s2, s3: s }
+    Rng{s0: s0, s1: s1, s2: s2, s3: s}
 }
 
 /// Live generator from OS entropy mixed with the wall clock.
 /// Two calls in the same millisecond still differ.
+
 pub func auto_seed() -> Rng {
     h := crypto.random_bytes(4)
     s := 0
@@ -66,27 +70,28 @@ pub func auto_seed() -> Rng {
 
 func nibble(c: str) -> int {
     match c {
-        "0" => 0,
-        "1" => 1,
-        "2" => 2,
-        "3" => 3,
-        "4" => 4,
-        "5" => 5,
-        "6" => 6,
-        "7" => 7,
-        "8" => 8,
-        "9" => 9,
-        "a" | "A" => 10,
-        "b" | "B" => 11,
-        "c" | "C" => 12,
-        "d" | "D" => 13,
-        "e" | "E" => 14,
-        "f" | "F" => 15,
-        _ => 0,
+        "0" => 0
+        "1" => 1
+        "2" => 2
+        "3" => 3
+        "4" => 4
+        "5" => 5
+        "6" => 6
+        "7" => 7
+        "8" => 8
+        "9" => 9
+        "a" | "A" => 10
+        "b" | "B" => 11
+        "c" | "C" => 12
+        "d" | "D" => 13
+        "e" | "E" => 14
+        "f" | "F" => 15
+        _ => 0
     }
 }
 
 /// Next 32-bit word in [0, 2^32), plus the advanced state.
+
 pub func u32(r: Rng) -> (int, Rng) {
     res := (rotl((r.s0 + r.s3) & MASK, 7) + r.s0) & MASK
     t := (r.s1 << 9) & MASK
@@ -96,11 +101,12 @@ pub func u32(r: Rng) -> (int, Rng) {
     s0 := r.s0 ^ s3
     s2 = s2 ^ t
     s3 = rotl(s3, 11)
-    return (res, Rng{ s0: s0, s1: s1, s2: s2, s3: s3 })
+    return (res, Rng{s0: s0, s1: s1, s2: s2, s3: s3})
 }
 
 /// Uniform int in [0, n) via bitmask rejection (no modulo bias).
 /// `n <= 1` draws 0 (`n == 1` can only be 0; `n <= 0` is meaningless).
+
 pub func below(r: Rng, n: int) -> (int, Rng) {
     if n <= 1 {
         return (0, r)
@@ -124,18 +130,21 @@ pub func below(r: Rng, n: int) -> (int, Rng) {
 }
 
 /// Uniform float in [0, 1): 32 bits of randomness over 2^32.
+
 pub func f64(r: Rng) -> (float, Rng) {
     p := u32(r)
     return (float(p[0]) / 4294967296.0, p[1])
 }
 
 /// Unbiased coin flip (draws from the word's top bit).
+
 pub func boolean(r: Rng) -> (bool, Rng) {
     p := u32(r)
     return ((p[0] >> 31) == 1, p[1])
 }
 
 /// Random element, or `.none` for an empty array.
+
 pub func pick<T>(r: Rng, xs: [T]) -> (Option<T>, Rng) {
     if xs.len() == 0 {
         return (.none, r)
@@ -148,8 +157,9 @@ pub func pick<T>(r: Rng, xs: [T]) -> (Option<T>, Rng) {
 /// Fisher-Yates shuffle. Returns a new array; the input is untouched
 /// (built element-by-element into fresh storage, so no backend's
 /// copy-on-write behavior can leak the mutation back into the input).
+
 pub func shuffle<T>(r: Rng, xs: [T]) -> ([T], Rng) {
-    out: [T] = []
+    out:[T] = []
     for x in xs {
         out.push(x)
     }
@@ -165,4 +175,120 @@ pub func shuffle<T>(r: Rng, xs: [T]) -> ([T], Rng) {
         i -= 1
     }
     return (out, r)
+}
+
+// ---------------------------------------------------------------------------
+// Tests (run with `zz test` from the package root). Same module, so they
+// call the API by bare name. Vendored consumers never see these:
+// `zz test` skips vendor/ during discovery.
+// ---------------------------------------------------------------------------
+
+@test
+func test_seed_is_deterministic() {
+    a := seed(42)
+    b := seed(42)
+    x, a := u32(a)
+    y, b := u32(b)
+    assert_eq(x, y)
+    assert_eq(a.s0, b.s0)
+    assert_eq(a.s1, b.s1)
+    assert_eq(a.s2, b.s2)
+    assert_eq(a.s3, b.s3)
+}
+
+@test
+func test_known_answer() {
+    // xoshiro128++ reference vector (LCG-expanded seed 42).
+    r := seed(42)
+    x, r := u32(r)
+    assert_eq(x, 3389691633)
+    x, r := u32(r)
+    assert_eq(x, 594985917)
+    x, r := u32(r)
+    assert_eq(x, 4134283714)
+}
+
+@test
+func test_different_seeds_differ() {
+    a := seed(1)
+    b := seed(2)
+    x, a := u32(a)
+    y, b := u32(b)
+    assert_ne(x, y)
+}
+
+@test
+func test_below_stays_in_range() {
+    r := seed(7)
+    i := 0
+    while i < 500 {
+        p := below(r, 100)
+        r = p[1]
+        v := p[0]
+        assert(v >= 0)
+        assert(v < 100)
+        i += 1
+    }
+}
+
+@test
+func test_below_one_always_zero() {
+    r := seed(7)
+    v, r := below(r, 1)
+    assert_eq(v, 0)
+}
+
+@test
+func test_f64_in_unit_interval() {
+    r := seed(7)
+    i := 0
+    while i < 200 {
+        p := f64(r)
+        r = p[1]
+        assert(p[0] >= 0.0)
+        assert(p[0] < 1.0)
+        i += 1
+    }
+}
+
+@test
+func test_shuffle_preserves_elements() {
+    r := seed(9)
+    a := [1, 2, 3, 4, 5]
+    p := shuffle(r, a)
+    s := p[0]
+    assert_eq(s.len(), 5)
+    // Same multiset: sums match and the input is untouched.
+    total := 0
+    for x in s {
+        total += x
+    }
+    assert_eq(total, 15)
+    assert_eq(a, [1, 2, 3, 4, 5])
+}
+
+@test
+func test_pick_empty_is_none() {
+    r := seed(9)
+    empty:[int] = []
+    p := pick(r, empty)
+    assert(p[0] == .none)
+}
+
+@test
+func test_state_threads() {
+    // Drawing twice advances the stream (no repeated values in a row
+    // for a healthy generator over a few draws).
+    r := seed(123)
+    a, r := u32(r)
+    b, r := u32(r)
+    c, r := u32(r)
+    assert(a != b || b != c)
+}
+
+@test
+func test_auto_seed_runs() {
+    a := auto_seed()
+    x, a := u32(a)
+    assert(x >= 0)
 }

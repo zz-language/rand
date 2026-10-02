@@ -65,9 +65,14 @@ program.
 
 ## Notes
 
-- `zz test` runs the suite in `tests/` (10 tests, incl. known-answer
-  vectors). In-repo tests resolve via the self path-dependency
-  (`[dependencies.rand] path = "."`); consumers use a normal path dep.
+- `zz test` runs the suite in `src/rand.zz` (10 tests, incl. known-answer
+  vectors). Tests are inline `@test` funcs in the same module, so the
+  manifest stays dependency-free and publish-clean; `zz test` skips
+  `vendor/`, so consumers never run them.
+- Requires a compiler with compound assignment and AOT tuple boxing
+  (dev line after 0.1.6 — older toolchains reject the file at parse
+  time; no `[package] zz` bound can express this yet since dev still
+  reports 0.1.6).
 - Float *display* precision differs by backend (VM prints 16 digits,
   AOT 17) — values are identical, only rendering differs (pre-existing
   engine behavior, not this package).
