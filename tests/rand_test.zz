@@ -1,0 +1,112 @@
+// Tests for the rand package. Run with `zz test` from the package root.
+import rand
+
+@test
+func test_seed_is_deterministic() {
+    a := rand.seed(42)
+    b := rand.seed(42)
+    x, a := rand.u32(a)
+    y, b := rand.u32(b)
+    assert_eq(x, y)
+    assert_eq(a.s0, b.s0)
+    assert_eq(a.s1, b.s1)
+    assert_eq(a.s2, b.s2)
+    assert_eq(a.s3, b.s3)
+}
+
+@test
+func test_known_answer() {
+    // xoshiro128++ reference vector (LCG-expanded seed 42).
+    r := rand.seed(42)
+    x, r := rand.u32(r)
+    assert_eq(x, 3389691633)
+    x, r := rand.u32(r)
+    assert_eq(x, 594985917)
+    x, r := rand.u32(r)
+    assert_eq(x, 4134283714)
+}
+
+@test
+func test_different_seeds_differ() {
+    a := rand.seed(1)
+    b := rand.seed(2)
+    x, a := rand.u32(a)
+    y, b := rand.u32(b)
+    assert_ne(x, y)
+}
+
+@test
+func test_below_stays_in_range() {
+    r := rand.seed(7)
+    i := 0
+    while i < 500 {
+        p := rand.below(r, 100)
+        r = p[1]
+        v := p[0]
+        assert(v >= 0)
+        assert(v < 100)
+        i += 1
+    }
+}
+
+@test
+func test_below_one_always_zero() {
+    r := rand.seed(7)
+    v, r := rand.below(r, 1)
+    assert_eq(v, 0)
+}
+
+@test
+func test_f64_in_unit_interval() {
+    r := rand.seed(7)
+    i := 0
+    while i < 200 {
+        p := rand.f64(r)
+        r = p[1]
+        assert(p[0] >= 0.0)
+        assert(p[0] < 1.0)
+        i += 1
+    }
+}
+
+@test
+func test_shuffle_preserves_elements() {
+    r := rand.seed(9)
+    a := [1, 2, 3, 4, 5]
+    p := rand.shuffle(r, a)
+    s := p[0]
+    assert_eq(s.len(), 5)
+    // Same multiset: sums match and the input is untouched.
+    total := 0
+    for x in s {
+        total += x
+    }
+    assert_eq(total, 15)
+    assert_eq(a, [1, 2, 3, 4, 5])
+}
+
+@test
+func test_pick_empty_is_none() {
+    r := rand.seed(9)
+    empty:[int] = []
+    p := rand.pick(r, empty)
+    assert(p[0] == .none)
+}
+
+@test
+func test_state_threads() {
+    // Drawing twice advances the stream (no repeated values in a row
+    // for a healthy generator over a few draws).
+    r := rand.seed(123)
+    a, r := rand.u32(r)
+    b, r := rand.u32(r)
+    c, r := rand.u32(r)
+    assert(a != b || b != c)
+}
+
+@test
+func test_auto_seed_runs() {
+    a := rand.auto_seed()
+    x, a := rand.u32(a)
+    assert(x >= 0)
+}

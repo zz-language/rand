@@ -1,0 +1,168 @@
+// rand — deterministic, dependency-free random numbers.
+//
+// Core: xoshiro128++ with 32-bit masked arithmetic (every step fits `i64`
+// with room to spare, so the overflow traps never fire).
+//
+// Value semantics: the generator is a plain struct passed by value, so
+// every draw returns the updated state alongside the value. Thread it:
+//
+//   rng := rand.seed(42)
+//   v, rng := rand.u32(rng)
+//   i, rng := rand.below(rng, 100)
+//   x, rng := rand.f64(rng)
+//
+// Same seed, same stream — across runs, machines, and backends.
+
+import std.time
+import std.crypto
+
+/// Generator state: four 32-bit words. Never all zero (the seeder uses a
+/// bijective step, so zero occurs at most once across the four words).
+pub struct Rng {
+    s0: int,
+    s1: int,
+    s2: int,
+    s3: int,
+}
+
+const MASK = 4294967295
+
+// Rotate left on a masked 32-bit word.
+func rotl(x: int, k: int) -> int {
+    ((x << k) & MASK) | (x >> (32 - k))
+}
+
+// One glibc-LCG step, masked to 32 bits. Max product
+// 4294967295 * 1103515245 stays under 2^63 — no trap.
+func lcg(s: int) -> int {
+    (s * 1103515245 + 12345) & MASK
+}
+
+/// Deterministic generator from one integer.
+pub func seed(n: int) -> Rng {
+    s := lcg(n & MASK)
+    s0 := s
+    s = lcg(s)
+    s1 := s
+    s = lcg(s)
+    s2 := s
+    s = lcg(s)
+    Rng{ s0: s0, s1: s1, s2: s2, s3: s }
+}
+
+/// Live generator from OS entropy mixed with the wall clock.
+/// Two calls in the same millisecond still differ.
+pub func auto_seed() -> Rng {
+    h := crypto.random_bytes(4)
+    s := 0
+    i := 0
+    while i < h.len() {
+        s = s * 16 + nibble(h[i])
+        i += 1
+    }
+    // s < 2^32 and now_ms fits i64: xor is exact, mask keeps 32 bits.
+    seed((s ^ time.now_ms()) & MASK)
+}
+
+func nibble(c: str) -> int {
+    match c {
+        "0" => 0,
+        "1" => 1,
+        "2" => 2,
+        "3" => 3,
+        "4" => 4,
+        "5" => 5,
+        "6" => 6,
+        "7" => 7,
+        "8" => 8,
+        "9" => 9,
+        "a" | "A" => 10,
+        "b" | "B" => 11,
+        "c" | "C" => 12,
+        "d" | "D" => 13,
+        "e" | "E" => 14,
+        "f" | "F" => 15,
+        _ => 0,
+    }
+}
+
+/// Next 32-bit word in [0, 2^32), plus the advanced state.
+pub func u32(r: Rng) -> (int, Rng) {
+    res := (rotl((r.s0 + r.s3) & MASK, 7) + r.s0) & MASK
+    t := (r.s1 << 9) & MASK
+    s2 := r.s2 ^ r.s0
+    s3 := r.s3 ^ r.s1
+    s1 := r.s1 ^ s2
+    s0 := r.s0 ^ s3
+    s2 = s2 ^ t
+    s3 = rotl(s3, 11)
+    return (res, Rng{ s0: s0, s1: s1, s2: s2, s3: s3 })
+}
+
+/// Uniform int in [0, n) via bitmask rejection (no modulo bias).
+/// `n <= 1` draws 0 (`n == 1` can only be 0; `n <= 0` is meaningless).
+pub func below(r: Rng, n: int) -> (int, Rng) {
+    if n <= 1 {
+        return (0, r)
+    }
+    // Smallest all-ones mask covering n - 1 (at most 2x oversample).
+    m := n - 1
+    m |= m >> 1
+    m |= m >> 2
+    m |= m >> 4
+    m |= m >> 8
+    m |= m >> 16
+    p := u32(r)
+    r = p[1]
+    v := p[0] & m
+    while v >= n {
+        p = u32(r)
+        r = p[1]
+        v = p[0] & m
+    }
+    return (v, r)
+}
+
+/// Uniform float in [0, 1): 32 bits of randomness over 2^32.
+pub func f64(r: Rng) -> (float, Rng) {
+    p := u32(r)
+    return (float(p[0]) / 4294967296.0, p[1])
+}
+
+/// Unbiased coin flip (draws from the word's top bit).
+pub func boolean(r: Rng) -> (bool, Rng) {
+    p := u32(r)
+    return ((p[0] >> 31) == 1, p[1])
+}
+
+/// Random element, or `.none` for an empty array.
+pub func pick<T>(r: Rng, xs: [T]) -> (Option<T>, Rng) {
+    if xs.len() == 0 {
+        return (.none, r)
+    } else {
+        p := below(r, xs.len())
+        return (.some(xs[p[0]]), p[1])
+    }
+}
+
+/// Fisher-Yates shuffle. Returns a new array; the input is untouched
+/// (built element-by-element into fresh storage, so no backend's
+/// copy-on-write behavior can leak the mutation back into the input).
+pub func shuffle<T>(r: Rng, xs: [T]) -> ([T], Rng) {
+    out: [T] = []
+    for x in xs {
+        out.push(x)
+    }
+    i := out.len() - 1
+    j := 0
+    while i > 0 {
+        p := below(r, i + 1)
+        r = p[1]
+        j = p[0]
+        t := out[i]
+        out[i] = out[j]
+        out[j] = t
+        i -= 1
+    }
+    return (out, r)
+}
