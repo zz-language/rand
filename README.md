@@ -1,17 +1,12 @@
-# rand — deterministic random numbers for ZZ
+# rand
 
-Pure-ZZ random generation. No native plugins, no dependencies.
-Core: **xoshiro128++** with 32-bit masked arithmetic (every step fits
-`i64` with room to spare, so the overflow traps never fire).
-Reference vectors verified bit-for-bit against the canonical algorithm.
-
-## Use
-
-Add the dependency, then import:
+Deterministic random numbers for ZZ. Pure ZZ, no dependencies.
+Xoshiro128++ core, verified bit-for-bit against the reference algorithm.
 
 ```toml
 [dependencies.rand]
-path = "path/to/rand"
+path = "…"
+# or: zz add rand
 ```
 
 ```zz
@@ -19,60 +14,66 @@ import rand
 
 func main() {
     rng := rand.seed(42)
-    v, rng := rand.u32(rng)      // [0, 2^32)
-    i, rng := rand.below(rng, 100) // [0, 100), unbiased
-    x, rng := rand.f64(rng)        // [0, 1)
-    b, rng := rand.boolean(rng)    // coin flip
-    println(v)
+    v, rng := rand.u32(rng)
+    println(v)   // 3389691633, every time
 }
 ```
 
-Value semantics: the generator is a plain struct passed by value, so
-every draw returns the updated state alongside the value — thread it
-with `:=` re-binding (tuple `=` reassignment doesn't exist; just
-re-bind each draw). Same seed, same stream, on every backend.
+The generator is a plain value: every draw hands back the next state
+alongside the value, so re-bind it (`v, rng := …`) on each draw.
+Same seed, same stream, on every backend. See `examples/demo.zz`
+(`cd examples && zz install && zz run demo.zz`) for all twelve
+functions in one runnable file.
 
-## API
+## Functions
 
-| Function | Returns | Notes |
-|---|---|---|
-| `seed(n: int) -> Rng` | deterministic state | LCG-expanded; same seed, same stream |
-| `auto_seed() -> Rng` | live state | OS entropy (`crypto.random_bytes`) mixed with wall clock |
-| `u32(r: Rng) -> (int, Rng)` | word in `[0, 2^32)` | raw xoshiro128++ output |
-| `below(r, n) -> (int, Rng)` | int in `[0, n)` | bitmask rejection — no modulo bias; `n <= 1` draws `0` |
-| `f64(r) -> (float, Rng)` | float in `[0, 1)` | 32 bits of randomness over 2^32 |
-| `boolean(r) -> (bool, Rng)` | coin flip | drawn from the word's top bit |
-| `pick<T>(r, xs) -> (Option<T>, Rng)` | element or `.none` | `.none` for empty input |
-| `shuffle<T>(r, xs) -> ([T], Rng)` | shuffled copy | input untouched (fresh storage) |
+- `seed(n)` — deterministic state from one int.
+- `auto_seed()` — live state from OS entropy + wall clock.
+- `u32(r)` — word in `[0, 2^32)`.
+- `below(r, n)` — int in `[0, n)`, unbiased (no modulo bias).
+- `randint(r, lo, hi)` — int in `[lo, hi)`.
+- `f64(r)` — float in `[0, 1)`.
+- `uniform(r, a, b)` — float in `[a, b]` (`a > b` mirrors the range).
+- `boolean(r)` — coin flip.
+- `pick(r, xs)` — random element, or `.none` when empty.
+- `choices(r, xs, k)` — k draws with replacement (repeats expected).
+- `sample(r, xs, k)` — k distinct elements, or `.none` if out of range.
+- `shuffle(r, xs)` — shuffled copy; the input is untouched.
+
+Coming from Python: `below`/`randint` have an exclusive upper bound
+(`randint(r, 1, 6)` is a d6, not 1–6 inclusive), `pick` returns
+`Option` instead of raising, and `f64` is Python's `random()`.
 
 ## Correctness
 
-- `seed(42)` opens `3389691633, 594985917, 4134283714…` — the
-  reference xoshiro128++ stream for the same expanded state.
-- 6000 × `below(r, 6)`: buckets 959–1078 around 1000 (all within
-  ±3σ); 5000 × `f64` mean 0.498 (σ ≈ 0.004).
-- Streams are bit-identical across backends (200k-draw accumulators
-  match exactly under `zz run` and `zz build`).
+`seed(42)` opens `3389691633, 594985917, 4134283714…` — the reference
+stream. 6000 × `below(r, 6)` lands 959–1078 per face (all within
+±3σ); `f64` averages 0.498 over 5000 draws. Streams are bit-identical
+across backends. `zz test` runs 20 checks including these vectors.
 
-## Performance (measured, dev VM unless noted)
+## Speed (measured)
 
-- `u32`: 200k draws in ~17.8s (VM) / ~1.0s (AOT binary)
-- `below`: 200k draws in ~35.5s (VM) / ~2.3s (AOT binary)
+- `u32`: ~4.5µs/draw AOT (~90–260µs in the debug VM)
+- `randint`: ~13µs/draw AOT
+- `shuffle`: ~11µs/element AOT · `sample(100)`: ~2.7ms AOT
 
-Cost is per-draw tuple allocation and dispatch in the VM, not the
-algorithm (a dozen integer ops). AOT is ~15–18× faster on the same
-program.
+Cost is per-draw tuple allocation and dispatch, not the algorithm
+(a dozen integer ops). AOT runs ~15–40× faster than the debug VM on
+the same program.
+
+## Memory (measured)
+
+Steady loops hold flat memory on the VM (~18B/draw noise over 200k
+draws). On AOT builds, draw loops retain roughly half a kilobyte per
+draw — an engine ownership gap in container appends (appended temps
+are never released; the lowerer emits no releases at all), not this
+package: plain int/string tuple churn stays flat in the same harness.
+Recorded for the upstream fix; budget ~0.5KB per draw for long AOT
+loops until then.
 
 ## Notes
 
-- `zz test` runs the suite in `src/rand.zz` (10 tests, incl. known-answer
-  vectors). Tests are inline `@test` funcs in the same module, so the
-  manifest stays dependency-free and publish-clean; `zz test` skips
-  `vendor/`, so consumers never run them.
-- Requires a compiler with compound assignment and AOT tuple boxing
-  (dev line after 0.1.6 — older toolchains reject the file at parse
-  time; no `[package] zz` bound can express this yet since dev still
-  reports 0.1.6).
-- Float *display* precision differs by backend (VM prints 16 digits,
-  AOT 17) — values are identical, only rendering differs (pre-existing
-  engine behavior, not this package).
+- Needs compound assignment + AOT tuple boxing (dev line after 0.1.6);
+  older toolchains reject the file at parse time.
+- Float *display* width differs by backend (16 vs 17 digits) — values
+  are identical, only rendering differs (pre-existing engine behavior).

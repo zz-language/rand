@@ -129,11 +129,28 @@ pub func below(r: Rng, n: int) -> (int, Rng) {
     return (v, r)
 }
 
+/// Uniform int in [lo, hi) (exclusive upper, like `below` shifted).
+/// `hi <= lo` draws `lo`.
+pub func randint(r: Rng, lo: int, hi: int) -> (int, Rng) {
+    if hi <= lo {
+        return (lo, r)
+    }
+    p := below(r, hi - lo)
+    return (lo + p[0], p[1])
+}
+
 /// Uniform float in [0, 1): 32 bits of randomness over 2^32.
 
 pub func f64(r: Rng) -> (float, Rng) {
     p := u32(r)
     return (float(p[0]) / 4294967296.0, p[1])
+}
+
+/// Uniform float in [a, b] (like Python's `uniform`). Works with
+/// `a > b` (mirrored range) and returns `a` when `a == b`.
+pub func uniform(r: Rng, a: float, b: float) -> (float, Rng) {
+    p := f64(r)
+    return (a + p[0] * (b - a), p[1])
 }
 
 /// Unbiased coin flip (draws from the word's top bit).
@@ -175,6 +192,55 @@ pub func shuffle<T>(r: Rng, xs: [T]) -> ([T], Rng) {
         i -= 1
     }
     return (out, r)
+}
+
+/// k draws with replacement (like Python's `choices`): each element is
+/// an independent `pick`, so repeats are expected. Empty input or
+/// `k <= 0` yields an empty list.
+pub func choices<T>(r: Rng, xs: [T], k: int) -> ([T], Rng) {
+    out: [T] = []
+    if xs.len() == 0 {
+        return (out, r)
+    }
+    i := 0
+    while i < k {
+        p := below(r, xs.len())
+        r = p[1]
+        out.push(xs[p[0]])
+        i += 1
+    }
+    return (out, r)
+}
+
+/// k distinct elements (like Python's `sample`): partial Fisher-Yates,
+/// so no element repeats. Returns `.none` when `k` is out of range
+/// (`k < 0` or `k > len`); `k == 0` draws `.some([])`.
+pub func sample<T>(r: Rng, xs: [T], k: int) -> (Option<[T]>, Rng) {
+    n := xs.len()
+    if k < 0 || k > n {
+        return (.none, r)
+    }
+    pool: [T] = []
+    for x in xs {
+        pool.push(x)
+    }
+    i := 0
+    while i < k {
+        p := below(r, n - i)
+        r = p[1]
+        j := i + p[0]
+        t := pool[i]
+        pool[i] = pool[j]
+        pool[j] = t
+        i += 1
+    }
+    res: [T] = []
+    i = 0
+    while i < k {
+        res.push(pool[i])
+        i += 1
+    }
+    return (.some(res), r)
 }
 
 // ---------------------------------------------------------------------------
@@ -291,4 +357,118 @@ func test_auto_seed_runs() {
     a := auto_seed()
     x, a := u32(a)
     assert(x >= 0)
+}
+
+@test
+func test_randint_range() {
+    r := seed(11)
+    i := 0
+    while i < 300 {
+        p := randint(r, 5, 10)
+        r = p[1]
+        v := p[0]
+        assert(v >= 5)
+        assert(v < 10)
+        i += 1
+    }
+}
+
+@test
+func test_randint_degenerate() {
+    r := seed(11)
+    v, r := randint(r, 7, 7)
+    assert_eq(v, 7)
+    w, r := randint(r, 9, 3)
+    assert_eq(w, 9)
+}
+
+@test
+func test_randint_deterministic() {
+    a := seed(99)
+    b := seed(99)
+    x, a := randint(a, 1, 100)
+    y, b := randint(b, 1, 100)
+    assert_eq(x, y)
+}
+
+@test
+func test_uniform_bounds() {
+    r := seed(13)
+    i := 0
+    while i < 200 {
+        p := uniform(r, -5.0, 5.0)
+        r = p[1]
+        assert(p[0] >= -5.0)
+        assert(p[0] <= 5.0)
+        i += 1
+    }
+}
+
+@test
+func test_uniform_degenerate() {
+    r := seed(13)
+    v, r := uniform(r, 2.5, 2.5)
+    assert_eq(v, 2.5)
+}
+
+@test
+func test_choices_length_and_membership() {
+    r := seed(17)
+    a := [10, 20, 30]
+    p := choices(r, a, 50)
+    r = p[1]
+    out := p[0]
+    assert_eq(out.len(), 50)
+    for x in out {
+        assert(x == 10 || x == 20 || x == 30)
+    }
+}
+
+@test
+func test_choices_empty() {
+    r := seed(17)
+    empty: [int] = []
+    p := choices(r, empty, 5)
+    assert_eq(p[0].len(), 0)
+}
+
+@test
+func test_sample_no_repeats() {
+    r := seed(19)
+    a := [1, 2, 3, 4, 5]
+    p := sample(r, a, 3)
+    r = p[1]
+    s := p[0] ?? []
+    assert_eq(s.len(), 3)
+    // Distinct: every pair differs; every element comes from the input.
+    i := 0
+    while i < 3 {
+        j := i + 1
+        while j < 3 {
+            assert_ne(s[i], s[j])
+            j += 1
+        }
+        assert(s[i] >= 1)
+        assert(s[i] <= 5)
+        i += 1
+    }
+}
+
+@test
+func test_sample_all_and_none() {
+    r := seed(19)
+    a := [1, 2, 3]
+    p := sample(r, a, 5)
+    assert(p[0] == .none)
+    q := sample(r, a, 3)
+    s := q[0] ?? []
+    assert_eq(s.len(), 3)
+    assert_eq(s[0] + s[1] + s[2], 6)
+}
+
+@test
+func test_sample_zero() {
+    r := seed(19)
+    p := sample(r, [1, 2], 0)
+    assert_eq(p[0] ?? [9], [])
 }

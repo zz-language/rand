@@ -1,0 +1,38 @@
+// Demo of every rand function. Run from examples/:
+//   zz install && zz run demo.zz
+import rand
+
+func main() {
+    rng := rand.seed(2024)
+    // Raw word + bounded ints (unbiased, no modulo bias).
+    v, rng := rand.u32(rng)
+    println("u32: {v}")
+    i, rng := rand.below(rng, 100)
+    println("below 100: {i}")
+    d20, rng := rand.randint(rng, 1, 20)
+    println("d20: {d20}")
+    // Floats: unit interval or any range.
+    x, rng := rand.f64(rng)
+    println("f64: {x}")
+    t, rng := rand.uniform(rng, -1.0, 1.0)
+    println("uniform: {t}")
+    // Coin flip.
+    b, rng := rand.boolean(rng)
+    println("boolean: {b}")
+    // Sequences.
+    faces := ["a", "b", "c", "d", "e", "f"]
+    p, rng := rand.pick(rng, faces)
+    println("pick: {p ?? "?"}")
+    c, rng := rand.choices(rng, faces, 3)
+    println("choices: {c}")
+    s, rng := rand.sample(rng, faces, 3)
+    println("sample: {s ?? []}")
+    h, rng := rand.shuffle(rng, faces)
+    println("shuffled: {h}")
+    println("input kept: {faces}")
+    // Live entropy instead of a fixed seed.
+    live := rand.auto_seed()
+    w, live := rand.u32(live)
+    println("auto: {w}")
+    println("demo_ok")
+}
