@@ -74,7 +74,7 @@ draws). On AOT builds, draw loops retain roughly half a kilobyte per
 draw — an engine ownership gap in container appends (appended temps
 are never released; the lowerer emits no releases at all), not this
 package: plain int/string tuple churn stays flat in the same harness.
-Recorded for the upstream fix; budget ~0.5KB per draw for long AOT
+Tracked upstream (zaidejjo/zz#188); budget ~0.5KB per draw for long AOT
 loops until then.
 
 ## Notes
