@@ -42,7 +42,8 @@ functions in one runnable file.
   bad input (empty, length mismatch, negative or all-zero weights).
 - `sample(r, xs, k)` — k distinct elements, or `.none` if out of range.
 - `shuffle(r, xs)` — shuffled copy; the input is untouched.
-- `fill(r, n)` — n words in one call (same per-draw cost as `u32`).
+- `fill(r, n)` — n words in one call, ~4x faster than n draws
+  (inlined recurrence, no per-draw tuple; verified bit-identical).
 
 Coming from Python: upper bounds are exclusive (`randint(r, 1, 7)`
 is a d6), `pick`/`sample` return `Option` instead of raising, and
@@ -60,7 +61,7 @@ backends. `zz test` runs 28 checks including these vectors.
 - `u32`: ~4.5µs/draw AOT (~100–250µs in the debug VM)
 - `randint`: ~13µs/draw AOT
 - `shuffle`: ~11µs/element AOT · `sample(100)`: ~2.7ms AOT
-- `fill(200k)`: same as 200k separate draws — ergonomics, not speed
+- `fill(200k)`: 254ms vs 1122ms sequential — ~4.4x end-to-end
 
 Cost is per-draw tuple allocation and dispatch, not the algorithm
 (a dozen integer ops). AOT runs ~15–40× faster than the debug VM on
