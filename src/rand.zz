@@ -7,9 +7,12 @@
 // every draw returns the updated state alongside the value. Thread it:
 //
 //   rng := rand.seed(42)
-//   v, rng := rand.u32(rng)
-//   i, rng := rand.below(rng, 100)
-//   x, rng := rand.f64(rng)
+//   v, rng := rand.randint(rng, 1, 11)   // free-function style
+//   w, rng := rng.randint(1, 11)         // method style (identical)
+//
+// One-off scripts: `rand.quick_int(1, 11)` seeds itself and returns the
+// bare value (not reproducible). Re-bind the rng after every draw —
+// reusing the old state repeats the stream.
 //
 // Same seed, same stream — across runs, machines, and backends.
 
@@ -338,345 +341,111 @@ pub func fill(r: Rng, n: int) -> ([int], Rng) {
     return (out, Rng{s0: s0, s1: s1, s2: s2, s3: s3})
 }
 
-// ---------------------------------------------------------------------------
-// Tests (run with `zz test` from the package root). Same module, so they
-// call the API by bare name. Vendored consumers never see these:
-// `zz test` skips vendor/ during discovery.
-// ---------------------------------------------------------------------------
+/// n uniform ints in [lo, hi) in one call: one state to thread instead
+/// of n. `hi <= lo` draws `lo` n times; `n <= 0` yields an empty list.
 
-@test
-func test_seed_is_deterministic() {
-    a := seed(42)
-    b := seed(42)
-    x, a := u32(a)
-    y, b := u32(b)
-    assert_eq(x, y)
-    assert_eq(a.s0, b.s0)
-    assert_eq(a.s1, b.s1)
-    assert_eq(a.s2, b.s2)
-    assert_eq(a.s3, b.s3)
-}
-
-@test
-func test_known_answer() {
-    // xoshiro128++ reference vector (LCG-expanded seed 42).
-    r := seed(42)
-    x, r := u32(r)
-    assert_eq(x, 3389691633)
-    x, r := u32(r)
-    assert_eq(x, 594985917)
-    x, r := u32(r)
-    assert_eq(x, 4134283714)
-}
-
-@test
-func test_different_seeds_differ() {
-    a := seed(1)
-    b := seed(2)
-    x, a := u32(a)
-    y, b := u32(b)
-    assert_ne(x, y)
-}
-
-@test
-func test_below_stays_in_range() {
-    r := seed(7)
-    i := 0
-    while i < 500 {
-        p := below(r, 100)
-        r = p[1]
-        v := p[0]
-        assert(v >= 0)
-        assert(v < 100)
-        i += 1
+pub func draw(r: Rng, lo: int, hi: int, n: int) -> ([int], Rng) {
+    out:[int] = []
+    if n <= 0 {
+        return (out, r)
     }
-}
-
-@test
-func test_below_one_always_zero() {
-    r := seed(7)
-    v, r := below(r, 1)
-    assert_eq(v, 0)
-}
-
-@test
-func test_f64_in_unit_interval() {
-    r := seed(7)
-    i := 0
-    while i < 200 {
-        p := f64(r)
-        r = p[1]
-        assert(p[0] >= 0.0)
-        assert(p[0] < 1.0)
-        i += 1
-    }
-}
-
-@test
-func test_shuffle_preserves_elements() {
-    r := seed(9)
-    a := [1, 2, 3, 4, 5]
-    p := shuffle(r, a)
-    s := p[0]
-    assert_eq(s.len(), 5)
-    // Same multiset: sums match and the input is untouched.
-    total := 0
-    for x in s {
-        total += x
-    }
-    assert_eq(total, 15)
-    assert_eq(a, [1, 2, 3, 4, 5])
-}
-
-@test
-func test_pick_empty_is_none() {
-    r := seed(9)
-    empty:[int] = []
-    p := pick(r, empty)
-    assert(p[0] == .none)
-}
-
-@test
-func test_state_threads() {
-    // Drawing twice advances the stream (no repeated values in a row
-    // for a healthy generator over a few draws).
-    r := seed(123)
-    a, r := u32(r)
-    b, r := u32(r)
-    c, r := u32(r)
-    assert(a != b || b != c)
-}
-
-@test
-func test_auto_seed_runs() {
-    a := auto_seed()
-    x, a := u32(a)
-    assert(x >= 0)
-}
-
-@test
-func test_randint_range() {
-    r := seed(11)
-    i := 0
-    while i < 300 {
-        p := randint(r, 5, 10)
-        r = p[1]
-        v := p[0]
-        assert(v >= 5)
-        assert(v < 10)
-        i += 1
-    }
-}
-
-@test
-func test_randint_degenerate() {
-    r := seed(11)
-    v, r := randint(r, 7, 7)
-    assert_eq(v, 7)
-    w, r := randint(r, 9, 3)
-    assert_eq(w, 9)
-}
-
-@test
-func test_randint_deterministic() {
-    a := seed(99)
-    b := seed(99)
-    x, a := randint(a, 1, 100)
-    y, b := randint(b, 1, 100)
-    assert_eq(x, y)
-}
-
-@test
-func test_uniform_bounds() {
-    r := seed(13)
-    i := 0
-    while i < 200 {
-        p := uniform(r, -5.0, 5.0)
-        r = p[1]
-        assert(p[0] >= -5.0)
-        assert(p[0] <= 5.0)
-        i += 1
-    }
-}
-
-@test
-func test_uniform_degenerate() {
-    r := seed(13)
-    v, r := uniform(r, 2.5, 2.5)
-    assert_eq(v, 2.5)
-}
-
-@test
-func test_choices_length_and_membership() {
-    r := seed(17)
-    a := [10, 20, 30]
-    p := choices(r, a, 50)
-    r = p[1]
-    out := p[0]
-    assert_eq(out.len(), 50)
-    for x in out {
-        assert(x == 10 || x == 20 || x == 30)
-    }
-}
-
-@test
-func test_choices_empty() {
-    r := seed(17)
-    empty:[int] = []
-    p := choices(r, empty, 5)
-    assert_eq(p[0].len(), 0)
-}
-
-@test
-func test_sample_no_repeats() {
-    r := seed(19)
-    a := [1, 2, 3, 4, 5]
-    p := sample(r, a, 3)
-    r = p[1]
-    s := p[0] ?? []
-    assert_eq(s.len(), 3)
-    // Distinct: every pair differs; every element comes from the input.
-    i := 0
-    while i < 3 {
-        j := i + 1
-        while j < 3 {
-            assert_ne(s[i], s[j])
-            j += 1
-        }
-        assert(s[i] >= 1)
-        assert(s[i] <= 5)
-        i += 1
-    }
-}
-
-@test
-func test_sample_all_and_none() {
-    r := seed(19)
-    a := [1, 2, 3]
-    p := sample(r, a, 5)
-    assert(p[0] == .none)
-    q := sample(r, a, 3)
-    s := q[0] ?? []
-    assert_eq(s.len(), 3)
-    assert_eq(s[0] + s[1] + s[2], 6)
-}
-
-@test
-func test_sample_zero() {
-    r := seed(19)
-    p := sample(r, [1, 2], 0)
-    assert_eq(p[0] ?? [9], [])
-}
-
-@test
-func test_weighted_certain_pick() {
-    r := seed(23)
-    a := [10, 20]
-    w := [1.0, 0.0]
-    i := 0
-    while i < 20 {
-        p := choices_weighted(r, a, w, 1)
-        r = p[1]
-        s := p[0] ?? []
-        assert_eq(s.len(), 1)
-        assert_eq(s[0], 10)
-        i += 1
-    }
-}
-
-@test
-func test_weighted_proportions() {
-    r := seed(23)
-    a := [0, 1]
-    w := [3.0, 1.0]
-    zeros := 0
-    i := 0
-    while i < 200 {
-        p := choices_weighted(r, a, w, 1)
-        r = p[1]
-        s := p[0] ?? []
-        zeros += 1 - s[0]
-        i += 1
-    }
-    // E[zeros] = 150, sd ~= 6.1: [120, 180] is ~5sd each way.
-    assert(zeros > 120)
-    assert(zeros < 180)
-}
-
-@test
-func test_weighted_rejects_bad_input() {
-    r := seed(23)
-    a := [1, 2]
-    p := choices_weighted(r, a, [1.0], 1)
-    assert(p[0] == .none)
-    q := choices_weighted(r, a, [1.0, -1.0], 1)
-    assert(q[0] == .none)
-    s := choices_weighted(r, a, [0.0, 0.0], 1)
-    assert(s[0] == .none)
-    empty:[int] = []
-    t := choices_weighted(r, empty, [], 1)
-    assert(t[0] == .none)
-}
-
-@test
-func test_gauss_deterministic() {
-    a := seed(29)
-    b := seed(29)
-    x, a := gauss(a, 0.0, 1.0)
-    y, b := gauss(b, 0.0, 1.0)
-    assert_eq(x, y)
-}
-
-@test
-func test_gauss_degenerate() {
-    r := seed(29)
-    v, r := gauss(r, 2.5, 0.0)
-    assert_eq(v, 2.5)
-}
-
-@test
-func test_gauss_shape() {
-    r := seed(29)
-    sum := 0.0
-    sumsq := 0.0
-    n := 60
     i := 0
     while i < n {
-        p := gauss(r, 10.0, 2.0)
+        p := randint(r, lo, hi)
         r = p[1]
-        sum += p[0]
-        sumsq += p[0] * p[0]
+        out.push(p[0])
         i += 1
     }
-    mean := sum / 60.0
-    assert(mean > 9.0)
-    assert(mean < 11.0)
-    variance := sumsq / 60.0 - mean * mean
-    assert(variance > 1.5)
-    assert(variance < 8.0)
+    return (out, r)
 }
 
-@test
-func test_fill_matches_sequential() {
-    a := seed(31)
-    b := seed(31)
-    p := fill(a, 5)
-    seq:[int] = []
-    i := 0
-    while i < 5 {
-        q := u32(b)
-        b = q[1]
-        seq.push(q[0])
-        i += 1
+/// One-off int in [lo, hi) for scripts: seeds from OS entropy + clock
+/// internally and returns the bare value, no state to thread. NOT
+/// reproducible — for repeatable streams, thread `auto_seed()` (or
+/// `seed()`) through the draw functions explicitly.
+
+pub func quick_int(lo: int, hi: int) -> int {
+    p := randint(auto_seed(), lo, hi)
+    return p[0]
+}
+
+// Method-style draws: `v, rng := rng.randint(1, 11)` reads better than
+// threading the free functions, with identical semantics (by-value
+// state in, advanced state out — re-bind the rng or the stream repeats).
+
+impl Rng {
+    /// Next 32-bit word in [0, 2^32), plus the advanced state.
+    pub func u32(self) -> (int, Rng) {
+        u32(self)
     }
-    assert_eq(p[0], seq)
-}
 
-@test
-func test_fill_empty() {
-    r := seed(31)
-    p := fill(r, 0)
-    assert_eq(p[0], [])
-    q := fill(r, -3)
-    assert_eq(q[0], [])
+    /// Uniform int in [0, n), plus the advanced state.
+    pub func below(self, n: int) -> (int, Rng) {
+        below(self, n)
+    }
+
+    /// Uniform int in [lo, hi), plus the advanced state.
+    pub func randint(self, lo: int, hi: int) -> (int, Rng) {
+        randint(self, lo, hi)
+    }
+
+    /// Uniform float in [0, 1), plus the advanced state.
+    pub func f64(self) -> (float, Rng) {
+        f64(self)
+    }
+
+    /// Uniform float in [a, b], plus the advanced state.
+    pub func uniform(self, a: float, b: float) -> (float, Rng) {
+        uniform(self, a, b)
+    }
+
+    /// Unbiased coin flip, plus the advanced state.
+    pub func boolean(self) -> (bool, Rng) {
+        boolean(self)
+    }
+
+    /// Random element (or `.none`), plus the advanced state.
+    pub func pick<T>(self, xs: [T]) -> (Option<T>, Rng) {
+        pick(self, xs)
+    }
+
+    /// Fisher-Yates shuffle, plus the advanced state.
+    pub func shuffle<T>(self, xs: [T]) -> ([T], Rng) {
+        shuffle(self, xs)
+    }
+
+    /// k draws with replacement, plus the advanced state.
+    pub func choices<T>(self, xs: [T], k: int) -> ([T], Rng) {
+        choices(self, xs, k)
+    }
+
+    /// k distinct elements (or `.none`), plus the advanced state.
+    pub func sample<T>(self, xs: [T], k: int) -> (Option<[T]>, Rng) {
+        sample(self, xs, k)
+    }
+
+    /// k weighted draws (or `.none`), plus the advanced state.
+    pub func choices_weighted<T>(self, xs: [T], ws: [float], k: int) -> (Option<[T]>, Rng) {
+        choices_weighted(self, xs, ws, k)
+    }
+
+    /// Normal draw, plus the advanced state.
+    pub func gauss(self, mu: float, sigma: float) -> (float, Rng) {
+        gauss(self, mu, sigma)
+    }
+
+    /// n raw words in one call, plus the advanced state.
+    pub func fill(self, n: int) -> ([int], Rng) {
+        fill(self, n)
+    }
+
+    /// n uniform ints in [lo, hi) in one call, plus the advanced state.
+    pub func draw(self, lo: int, hi: int, n: int) -> ([int], Rng) {
+        draw(self, lo, hi, n)
+    }
 }
+// ---------------------------------------------------------------------------
+// Tests live in tests/rand_test.zz (separate `rand-tests` package via
+// `import rand`) so the published artifact stays lean. Run from tests/:
+//   zz install && zz test
+// ---------------------------------------------------------------------------

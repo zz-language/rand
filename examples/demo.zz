@@ -40,5 +40,11 @@ func main() {
     live := rand.auto_seed()
     w, live := rand.u32(live)
     println("auto: {w}")
+    // Method style (identical semantics) + batch + one-shot.
+    m, live := live.randint(1, 7)
+    println("method d6: {m}")
+    ds, live := live.draw(1, 7, 4)
+    println("draw 4d6: {ds}")
+    println("quick: {rand.quick_int(1, 7)}")
     println("demo_ok")
 }

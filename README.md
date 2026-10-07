@@ -16,14 +16,28 @@ func main() {
     rng := rand.seed(42)
     v, rng := rand.u32(rng)
     println(v)   // 3389691633, every time
+    // Method style is identical: value in, value + next state out.
+    d6, rng := rng.randint(1, 7)
+    println(d6)
+    // One-off scripts: no state to thread (not reproducible).
+    println(rand.quick_int(1, 7))
 }
 ```
 
 The generator is a plain value: every draw hands back the next state
 alongside the value, so re-bind it (`v, rng := …`) on each draw.
 Same seed, same stream, on every backend. See `examples/demo.zz`
-(`cd examples && zz install && zz run demo.zz`) for all fifteen
-functions in one runnable file.
+(`cd examples && zz install && zz run demo.zz`) for all seventeen
+functions in one runnable file. Tests live in `tests/`
+(`cd tests && zz install && zz test`).
+
+## Common mistakes
+
+- Reusing the old state repeats the stream — always re-bind:
+  `v, rng := rng.randint(1, 7)`, never `v, _ := …` in a loop.
+- Upper bounds are exclusive: `randint(r, 1, 7)` is a d6 (1–6).
+- `import rand(randint)` alone still needs an `Rng` first argument
+  (`randint(rng, 1, 7)`); `quick_int(1, 7)` is the bare-value shortcut.
 
 ## Functions
 
@@ -44,6 +58,12 @@ functions in one runnable file.
 - `shuffle(r, xs)` — shuffled copy; the input is untouched.
 - `fill(r, n)` — n words in one call, ~4x faster than n draws
   (inlined recurrence, no per-draw tuple; verified bit-identical).
+- `draw(r, lo, hi, n)` — n ints in `[lo, hi)` in one call.
+- `quick_int(lo, hi)` — one-off bare int in `[lo, hi)` for scripts
+  (self-seeding, not reproducible).
+
+Every draw above also exists as an `Rng` method with identical
+semantics: `v, rng := rng.randint(1, 7)`.
 
 Coming from Python: upper bounds are exclusive (`randint(r, 1, 7)`
 is a d6), `pick`/`sample` return `Option` instead of raising, and
@@ -54,7 +74,7 @@ is a d6), `pick`/`sample` return `Option` instead of raising, and
 `seed(42)` opens `3389691633, 594985917, 4134283714…` — the reference
 stream. Ranges, weights, and shapes are covered by statistical smokes
 (±3–5σ) plus determinism checks. Streams are bit-identical across
-backends. `zz test` runs 28 checks including these vectors.
+backends. `zz test` (from `tests/`) runs 34 checks including these vectors.
 
 ## Speed (measured)
 

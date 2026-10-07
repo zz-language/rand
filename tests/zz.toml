@@ -1,0 +1,6 @@
+[package]
+name = "rand-tests"
+version = "0.1.0"
+
+[dependencies.rand]
+path = ".."
