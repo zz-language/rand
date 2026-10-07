@@ -260,6 +260,9 @@ loops until then.
 
 ## Changelog
 
+- `0.4.1` — every draw inlined to the `u32` floor (2–37x faster);
+  `draw` batch fast path; VM-vs-AOT parity harness; full manual
+  rewrite (install, rules, API reference, guides).
 - `0.4.0` — `Rng` method style for all draws, `draw` batch helper,
   `quick_int` one-shot; tests moved to `tests/` (45 checks);
   reference-stream pins + chi-square uniformity smokes;
