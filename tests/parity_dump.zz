@@ -1,0 +1,52 @@
+// parity_dump.zz — deterministic int-domain stream dump for the
+// VM-vs-AOT bit-identity check (scripts/check-parity.sh).
+// Floats are deliberately excluded: backends render identical float
+// values at different widths (16 vs 17 digits), which would false-fail
+// a text diff. Ints render identically everywhere.
+import rand
+
+func main() {
+    r := rand.seed(42)
+    i := 0
+    while i < 6 {
+        p := rand.u32(r)
+        r = p[1]
+        println(p[0])
+        i += 1
+    }
+    r = rand.seed(7)
+    i = 0
+    while i < 10 {
+        p := rand.below(r, 100)
+        r = p[1]
+        println(p[0])
+        i += 1
+    }
+    r = rand.seed(11)
+    i = 0
+    while i < 10 {
+        p := rand.randint(r, 5, 10)
+        r = p[1]
+        println(p[0])
+        i += 1
+    }
+    r = rand.seed(9)
+    s, r := rand.shuffle(r, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    println(s)
+    f, r := rand.fill(r, 8)
+    println(f)
+    i = 0
+    while i < 8 {
+        b, nr := rand.boolean(r)
+        r = nr
+        if b {
+            println(1)
+        } else {
+            println(0)
+        }
+        i += 1
+    }
+    c, r := rand.choices(r, [10, 20, 30], 10)
+    println(c)
+    println("parity_dump_ok")
+}

@@ -76,8 +76,10 @@ stream, pinned word-for-word plus derived draws (`f64`, `below`,
 `randint`, `uniform`, `gauss`) in `test_reference_stream`. Uniformity
 is covered by chi-square smokes (`below` 10 buckets × 2000 draws,
 `randint` 6 faces × 600 draws, ±4.5σ bounds) alongside shape checks
-and determinism checks. Streams are bit-identical across backends.
-`zz test` (from `tests/`) runs 44 checks.
+and determinism checks. Streams are bit-identical across backends
+(`scripts/check-parity.sh` diffs VM vs AOT int-domain streams;
+floats are excluded — backends render identical values at different
+widths). `zz test` (from `tests/`) runs 44 checks.
 
 ## Speed (measured)
 
