@@ -424,3 +424,120 @@ func test_quick_int_stays_in_range() {
         i += 1
     }
 }
+
+@test
+func test_reference_stream() {
+    // Pinned outputs for seed(42): u32 words match the xoshiro128++
+    // vectors (see test_known_answer); every derived draw below must
+    // reproduce exactly, or the algorithm changed.
+    r := rand.seed(42)
+    a, r := rand.f64(r)
+    assert_eq(a, 0.7892240846995264)
+    b, r := rand.below(r, 100)
+    assert_eq(b, 61)
+    c, r := rand.randint(r, 1, 100)
+    assert_eq(c, 67)
+    d, r := rand.uniform(r, -2.0, 3.0)
+    assert_eq(d, 1.2254140172153711)
+    e, r := rand.gauss(r, 0.0, 1.0)
+    assert_eq(e, 0.5306621797270508)
+    f, r := rand.u32(r)
+    assert_eq(f, 1037463144)
+}
+
+@test
+func test_below_uniform_chi() {
+    // 2000 draws over 10 buckets: expected 200 each (sd ~13.4).
+    // Bounds [140, 260] are +-4.5 sd; a biased sampler fails loudly.
+    r := rand.seed(101)
+    counts:[int] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    i := 0
+    while i < 2000 {
+        p := rand.below(r, 10)
+        r = p[1]
+        counts[p[0]] = counts[p[0]] + 1
+        i += 1
+    }
+    for c in counts {
+        assert(c >= 140)
+        assert(c <= 260)
+    }
+}
+
+@test
+func test_randint_uniform_chi() {
+    // 600 d6 draws: expected 100 per face (sd ~9.1), bounds +-4.4 sd.
+    r := rand.seed(102)
+    counts:[int] = [0, 0, 0, 0, 0, 0]
+    i := 0
+    while i < 600 {
+        p := rand.randint(r, 1, 7)
+        r = p[1]
+        counts[p[0] - 1] = counts[p[0] - 1] + 1
+        i += 1
+    }
+    for c in counts {
+        assert(c >= 60)
+        assert(c <= 140)
+    }
+}
+
+@test
+func test_below_nonpositive() {
+    r := rand.seed(103)
+    assert_eq(rand.below(r, 0)[0], 0)
+    assert_eq(rand.below(r, -5)[0], 0)
+}
+
+@test
+func test_uniform_mirrored() {
+    // a > b mirrors the range: draws still land inside [b, a].
+    r := rand.seed(104)
+    i := 0
+    while i < 100 {
+        p := rand.uniform(r, 3.0, -2.0)
+        r = p[1]
+        assert(p[0] >= -2.0)
+        assert(p[0] <= 3.0)
+        i += 1
+    }
+}
+
+@test
+func test_gauss_negative_sigma() {
+    r := rand.seed(105)
+    v, r := rand.gauss(r, 2.5, -1.0)
+    assert_eq(v, 2.5)
+}
+
+@test
+func test_sample_negative_k() {
+    r := rand.seed(106)
+    p := rand.sample(r, [1, 2, 3], -1)
+    assert(p[0] == .none)
+}
+
+@test
+func test_choices_negative_k() {
+    r := rand.seed(106)
+    p := rand.choices(r, [1, 2], -1)
+    assert_eq(p[0], [])
+}
+
+@test
+func test_shuffle_trivial() {
+    r := rand.seed(107)
+    e:[int] = []
+    assert_eq(rand.shuffle(r, e)[0], [])
+    assert_eq(rand.shuffle(r, [42])[0], [42])
+}
+
+@test
+func test_pick_singleton() {
+    r := rand.seed(108)
+    p, r := rand.pick(r, [7])
+    match p {
+        .some(v) => assert_eq(v, 7)
+        .none => assert(false)
+    }
+}
