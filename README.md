@@ -121,3 +121,10 @@ loops until then.
   older toolchains reject the file at parse time.
 - Float *display* width differs by backend (16 vs 17 digits) — values
   are identical, only rendering differs (pre-existing engine behavior).
+
+## Changelog
+
+- `0.4.0` — `Rng` method style for all draws, `draw` batch helper,
+  `quick_int` one-shot; tests moved to `tests/` (44 checks);
+  reference-stream pins + chi-square uniformity smokes;
+  reproducible `bench/` harness with measured numbers.
