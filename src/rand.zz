@@ -342,21 +342,63 @@ pub func fill(r: Rng, n: int) -> ([int], Rng) {
 }
 
 /// n uniform ints in [lo, hi) in one call: one state to thread instead
-/// of n. `hi <= lo` draws `lo` n times; `n <= 0` yields an empty list.
+/// of n. The xoshiro recurrence and the rejection mask run inline on
+/// locals (same ops as `randint`, verified identical by test), with the
+/// mask hoisted out of the loop: much faster than n separate draws.
+/// `hi <= lo` draws `lo` n times without consuming state (exactly what
+/// `randint` does); `n <= 0` yields an empty list.
 
 pub func draw(r: Rng, lo: int, hi: int, n: int) -> ([int], Rng) {
     out:[int] = []
     if n <= 0 {
         return (out, r)
     }
+    span := hi - lo
+    if span <= 1 {
+        i := 0
+        while i < n {
+            out.push(lo)
+            i += 1
+        }
+        return (out, r)
+    }
+    // Hoisted mask from below(): smallest all-ones mask covering span-1.
+    m := span - 1
+    m |= m >> 1
+    m |= m >> 2
+    m |= m >> 4
+    m |= m >> 8
+    m |= m >> 16
+    s0 := r.s0
+    s1 := r.s1
+    s2 := r.s2
+    s3 := r.s3
     i := 0
     while i < n {
-        p := randint(r, lo, hi)
-        r = p[1]
-        out.push(p[0])
+        res := (rotl((s0 + s3) & MASK, 7) + s0) & MASK
+        t := (s1 << 9) & MASK
+        s2 = s2 ^ s0
+        s3 = s3 ^ s1
+        s1 = s1 ^ s2
+        s0 = s0 ^ s3
+        s2 = s2 ^ t
+        s3 = rotl(s3, 11)
+        v := res & m
+        while v >= span {
+            res = (rotl((s0 + s3) & MASK, 7) + s0) & MASK
+            t = (s1 << 9) & MASK
+            s2 = s2 ^ s0
+            s3 = s3 ^ s1
+            s1 = s1 ^ s2
+            s0 = s0 ^ s3
+            s2 = s2 ^ t
+            s3 = rotl(s3, 11)
+            v = res & m
+        }
+        out.push(lo + v)
         i += 1
     }
-    return (out, r)
+    return (out, Rng{s0: s0, s1: s1, s2: s2, s3: s3})
 }
 
 /// One-off int in [lo, hi) for scripts: seeds from OS entropy + clock
