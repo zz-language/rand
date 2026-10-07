@@ -62,5 +62,86 @@ func main() {
     t1 = time.now_ms()
     println("sample(100) ms: {t1 - t0}")
     println("shuffled: {s.len()} sampled-none: {m == .none}")
+
+    t0 = time.now_ms()
+    i = 0
+    while i < N {
+        p := rand.below(rng, 100)
+        rng = p[1]
+        i += 1
+    }
+    t1 = time.now_ms()
+    println("below {N} draws ms: {t1 - t0}")
+
+    t0 = time.now_ms()
+    i = 0
+    while i < N {
+        p := rand.f64(rng)
+        rng = p[1]
+        i += 1
+    }
+    t1 = time.now_ms()
+    println("f64 {N} draws ms: {t1 - t0}")
+
+    t0 = time.now_ms()
+    i = 0
+    while i < N {
+        p := rand.uniform(rng, -2.0, 3.0)
+        rng = p[1]
+        i += 1
+    }
+    t1 = time.now_ms()
+    println("uniform {N} draws ms: {t1 - t0}")
+
+    t0 = time.now_ms()
+    i = 0
+    while i < N {
+        p := rand.boolean(rng)
+        rng = p[1]
+        i += 1
+    }
+    t1 = time.now_ms()
+    println("boolean {N} draws ms: {t1 - t0}")
+
+    t0 = time.now_ms()
+    i = 0
+    while i < N {
+        p := rand.gauss(rng, 0.0, 1.0)
+        rng = p[1]
+        i += 1
+    }
+    t1 = time.now_ms()
+    println("gauss {N} draws ms: {t1 - t0}")
+
+    pool:[int] = xs
+    t0 = time.now_ms()
+    i = 0
+    while i < N {
+        p := rand.pick(rng, pool)
+        rng = p[1]
+        i += 1
+    }
+    t1 = time.now_ms()
+    println("pick {N} draws ms: {t1 - t0}")
+
+    t0 = time.now_ms()
+    c, rng := rand.choices(rng, pool, N)
+    t1 = time.now_ms()
+    println("choices {N} ms: {t1 - t0}")
+    println("choices-out: {c.len()}")
+
+    ws:[float] = []
+    small:[int] = []
+    j := 0
+    while j < 100 {
+        ws.push(1.0)
+        small.push(j)
+        j += 1
+    }
+    t0 = time.now_ms()
+    w, rng := rand.choices_weighted(rng, small, ws, N)
+    t1 = time.now_ms()
+    println("weighted {N}x100 ms: {t1 - t0}")
+    println("weighted-out: {w == .none}")
     println("bench_ok")
 }
