@@ -90,21 +90,31 @@ N=500 VM, on x86_64 i3-4005U:
 
 | op | AOT | VM |
 |---|---|---|
-| `u32` | ~1.7µs/draw | ~116µs/draw |
-| `randint` | ~5.5µs/draw | ~200µs/draw |
+| `u32` | ~1.6µs/draw | ~116µs/draw |
+| `below` / `randint` / `boolean` | ~1.6µs/draw | ~200µs/draw |
+| `f64` / `uniform` / `gauss` | ~1.7µs/draw | — |
+| `pick` | ~2.1µs/draw | — |
 | `fill(200k)` | 29ms (~0.15µs/word) | — |
 | `draw(200k)` | 32ms (~0.16µs/draw) | — |
-| `shuffle(200k)` | ~1126ms (~5.6µs/elem) | — |
-| `sample(100)` over 200k | ~11ms | — |
+| `choices(200k)` | 55ms (~0.28µs/draw) | — |
+| `choices_weighted(200k×100)` | 602ms (~3µs/draw, linear scan) | — |
+| `shuffle(200k)` | 124ms (~0.6µs/elem) | — |
+| `sample(100)` over 200k | ~8ms | — |
 
 Notes:
 
+- Every draw runs the xoshiro step inline on locals — no nested
+  per-draw tuples anywhere. Single draws bottom out at the `u32`
+  floor (~1.6µs); batch functions amortize further.
 - Bulk `fill` beats a per-draw `u32` loop ~12x here (29ms vs 339ms):
   per-draw tuple allocation and dispatch dominate, not the xoshiro
   recurrence (a dozen integer ops).
-- `draw` inlines the recurrence with a hoisted mask, so bulk ranged
-  draws run at ~0.16µs/draw — on par with `fill`, ~35x faster than
-  looping `randint` (bit-identical output, pinned by test).
+- `gauss` sits at the `u32` floor plus its log/cos/sqrt tail — the
+  transcendentals are the true cost, irreducible without changing
+  the algorithm (and its pinned stream).
+- `choices_weighted` scans weights linearly per draw; binary search
+  would be O(log n) but changes float rounding and therefore the
+  pinned stream — kept linear, documented.
 - AOT runs ~35–70× faster than the debug VM on draws.
 
 ## Memory (measured)

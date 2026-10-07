@@ -110,6 +110,8 @@ pub func u32(r: Rng) -> (int, Rng) {
 
 /// Uniform int in [0, n) via bitmask rejection (no modulo bias).
 /// `n <= 1` draws 0 (`n == 1` can only be 0; `n <= 0` is meaningless).
+/// The xoshiro step runs inline on locals (same ops as `u32`, verified
+/// identical by test), skipping the per-draw tuple.
 
 pub func below(r: Rng, n: int) -> (int, Rng) {
     if n <= 1 {
@@ -122,106 +124,279 @@ pub func below(r: Rng, n: int) -> (int, Rng) {
     m |= m >> 4
     m |= m >> 8
     m |= m >> 16
-    p := u32(r)
-    r = p[1]
-    v := p[0] & m
+    s0 := r.s0
+    s1 := r.s1
+    s2 := r.s2
+    s3 := r.s3
+    res := (rotl((s0 + s3) & MASK, 7) + s0) & MASK
+    t := (s1 << 9) & MASK
+    s2 = s2 ^ s0
+    s3 = s3 ^ s1
+    s1 = s1 ^ s2
+    s0 = s0 ^ s3
+    s2 = s2 ^ t
+    s3 = rotl(s3, 11)
+    v := res & m
     while v >= n {
-        p = u32(r)
-        r = p[1]
-        v = p[0] & m
+        res = (rotl((s0 + s3) & MASK, 7) + s0) & MASK
+        t = (s1 << 9) & MASK
+        s2 = s2 ^ s0
+        s3 = s3 ^ s1
+        s1 = s1 ^ s2
+        s0 = s0 ^ s3
+        s2 = s2 ^ t
+        s3 = rotl(s3, 11)
+        v = res & m
     }
-    return (v, r)
+    return (v, Rng{s0: s0, s1: s1, s2: s2, s3: s3})
 }
 
 /// Uniform int in [lo, hi) (exclusive upper, like `below` shifted).
-/// `hi <= lo` draws `lo`.
+/// `hi <= lo` draws `lo`. Inlined like `below` (span <= 1 consumes
+/// no state, exactly as `below` does).
 
 pub func randint(r: Rng, lo: int, hi: int) -> (int, Rng) {
-    if hi <= lo {
+    span := hi - lo
+    if span <= 1 {
         return (lo, r)
     }
-    p := below(r, hi - lo)
-    return (lo + p[0], p[1])
+    m := span - 1
+    m |= m >> 1
+    m |= m >> 2
+    m |= m >> 4
+    m |= m >> 8
+    m |= m >> 16
+    s0 := r.s0
+    s1 := r.s1
+    s2 := r.s2
+    s3 := r.s3
+    res := (rotl((s0 + s3) & MASK, 7) + s0) & MASK
+    t := (s1 << 9) & MASK
+    s2 = s2 ^ s0
+    s3 = s3 ^ s1
+    s1 = s1 ^ s2
+    s0 = s0 ^ s3
+    s2 = s2 ^ t
+    s3 = rotl(s3, 11)
+    v := res & m
+    while v >= span {
+        res = (rotl((s0 + s3) & MASK, 7) + s0) & MASK
+        t = (s1 << 9) & MASK
+        s2 = s2 ^ s0
+        s3 = s3 ^ s1
+        s1 = s1 ^ s2
+        s0 = s0 ^ s3
+        s2 = s2 ^ t
+        s3 = rotl(s3, 11)
+        v = res & m
+    }
+    return (lo + v, Rng{s0: s0, s1: s1, s2: s2, s3: s3})
 }
 
 /// Uniform float in [0, 1): 32 bits of randomness over 2^32.
+/// Inlined like `below`.
 
 pub func f64(r: Rng) -> (float, Rng) {
-    p := u32(r)
-    return (float(p[0]) / 4294967296.0, p[1])
+    res := (rotl((r.s0 + r.s3) & MASK, 7) + r.s0) & MASK
+    t := (r.s1 << 9) & MASK
+    s2 := r.s2 ^ r.s0
+    s3 := r.s3 ^ r.s1
+    s1 := r.s1 ^ s2
+    s0 := r.s0 ^ s3
+    s2 = s2 ^ t
+    s3 = rotl(s3, 11)
+    return (float(res) / 4294967296.0, Rng{s0: s0, s1: s1, s2: s2, s3: s3})
 }
 
 /// Uniform float in [a, b] (like Python's `uniform`). Works with
 /// `a > b` (mirrored range) and returns `a` when `a == b`.
+/// Inlined like `f64`.
 
 pub func uniform(r: Rng, a: float, b: float) -> (float, Rng) {
-    p := f64(r)
-    return (a + p[0] * (b - a), p[1])
+    res := (rotl((r.s0 + r.s3) & MASK, 7) + r.s0) & MASK
+    t := (r.s1 << 9) & MASK
+    s2 := r.s2 ^ r.s0
+    s3 := r.s3 ^ r.s1
+    s1 := r.s1 ^ s2
+    s0 := r.s0 ^ s3
+    s2 = s2 ^ t
+    s3 = rotl(s3, 11)
+    return (a + float(res) / 4294967296.0 * (b - a), Rng{s0: s0, s1: s1, s2: s2, s3: s3})
 }
 
-/// Unbiased coin flip (draws from the word's top bit).
+/// Unbiased coin flip (draws from the word's top bit). Inlined like `u32`.
 
 pub func boolean(r: Rng) -> (bool, Rng) {
-    p := u32(r)
-    return ((p[0] >> 31) == 1, p[1])
+    res := (rotl((r.s0 + r.s3) & MASK, 7) + r.s0) & MASK
+    t := (r.s1 << 9) & MASK
+    s2 := r.s2 ^ r.s0
+    s3 := r.s3 ^ r.s1
+    s1 := r.s1 ^ s2
+    s0 := r.s0 ^ s3
+    s2 = s2 ^ t
+    s3 = rotl(s3, 11)
+    return ((res >> 31) == 1, Rng{s0: s0, s1: s1, s2: s2, s3: s3})
 }
 
-/// Random element, or `.none` for an empty array.
+/// Random element, or `.none` for an empty array. Inlined like `below`
+/// (empty input consumes no state, exactly as before).
 
 pub func pick<T>(r: Rng, xs: [T]) -> (Option<T>, Rng) {
-    if xs.len() == 0 {
+    n := xs.len()
+    if n == 0 {
         return (.none, r)
-    } else {
-        p := below(r, xs.len())
-        return (.some(xs[p[0]]), p[1])
     }
+    if n == 1 {
+        return (.some(xs[0]), r)
+    }
+    m := n - 1
+    m |= m >> 1
+    m |= m >> 2
+    m |= m >> 4
+    m |= m >> 8
+    m |= m >> 16
+    s0 := r.s0
+    s1 := r.s1
+    s2 := r.s2
+    s3 := r.s3
+    res := (rotl((s0 + s3) & MASK, 7) + s0) & MASK
+    t := (s1 << 9) & MASK
+    s2 = s2 ^ s0
+    s3 = s3 ^ s1
+    s1 = s1 ^ s2
+    s0 = s0 ^ s3
+    s2 = s2 ^ t
+    s3 = rotl(s3, 11)
+    v := res & m
+    while v >= n {
+        res = (rotl((s0 + s3) & MASK, 7) + s0) & MASK
+        t = (s1 << 9) & MASK
+        s2 = s2 ^ s0
+        s3 = s3 ^ s1
+        s1 = s1 ^ s2
+        s0 = s0 ^ s3
+        s2 = s2 ^ t
+        s3 = rotl(s3, 11)
+        v = res & m
+    }
+    return (.some(xs[v]), Rng{s0: s0, s1: s1, s2: s2, s3: s3})
 }
 
 /// Fisher-Yates shuffle. Returns a new array; the input is untouched
 /// (built element-by-element into fresh storage, so no backend's
 /// copy-on-write behavior can leak the mutation back into the input).
+/// Draws run inline on locals (same ops as `below`, verified identical
+/// by test), skipping per-draw tuples.
 
 pub func shuffle<T>(r: Rng, xs: [T]) -> ([T], Rng) {
     out:[T] = []
     for x in xs {
         out.push(x)
     }
+    s0 := r.s0
+    s1 := r.s1
+    s2 := r.s2
+    s3 := r.s3
     i := out.len() - 1
     j := 0
     while i > 0 {
-        p := below(r, i + 1)
-        r = p[1]
-        j = p[0]
-        t := out[i]
+        nn := i + 1
+        m := nn - 1
+        m |= m >> 1
+        m |= m >> 2
+        m |= m >> 4
+        m |= m >> 8
+        m |= m >> 16
+        res := (rotl((s0 + s3) & MASK, 7) + s0) & MASK
+        t := (s1 << 9) & MASK
+        s2 = s2 ^ s0
+        s3 = s3 ^ s1
+        s1 = s1 ^ s2
+        s0 = s0 ^ s3
+        s2 = s2 ^ t
+        s3 = rotl(s3, 11)
+        v := res & m
+        while v >= nn {
+            res = (rotl((s0 + s3) & MASK, 7) + s0) & MASK
+            t = (s1 << 9) & MASK
+            s2 = s2 ^ s0
+            s3 = s3 ^ s1
+            s1 = s1 ^ s2
+            s0 = s0 ^ s3
+            s2 = s2 ^ t
+            s3 = rotl(s3, 11)
+            v = res & m
+        }
+        j = v
+        t2 := out[i]
         out[i] = out[j]
-        out[j] = t
+        out[j] = t2
         i -= 1
     }
-    return (out, r)
+    return (out, Rng{s0: s0, s1: s1, s2: s2, s3: s3})
 }
 
 /// k draws with replacement (like Python's `choices`): each element is
 /// an independent `pick`, so repeats are expected. Empty input or
-/// `k <= 0` yields an empty list.
+/// `k <= 0` yields an empty list. Draws run inline like `shuffle`.
 
 pub func choices<T>(r: Rng, xs: [T], k: int) -> ([T], Rng) {
     out:[T] = []
-    if xs.len() == 0 {
+    n := xs.len()
+    if n == 0 {
         return (out, r)
     }
+    if n == 1 {
+        i := 0
+        while i < k {
+            out.push(xs[0])
+            i += 1
+        }
+        return (out, r)
+    }
+    m := n - 1
+    m |= m >> 1
+    m |= m >> 2
+    m |= m >> 4
+    m |= m >> 8
+    m |= m >> 16
+    s0 := r.s0
+    s1 := r.s1
+    s2 := r.s2
+    s3 := r.s3
     i := 0
     while i < k {
-        p := below(r, xs.len())
-        r = p[1]
-        out.push(xs[p[0]])
+        res := (rotl((s0 + s3) & MASK, 7) + s0) & MASK
+        t := (s1 << 9) & MASK
+        s2 = s2 ^ s0
+        s3 = s3 ^ s1
+        s1 = s1 ^ s2
+        s0 = s0 ^ s3
+        s2 = s2 ^ t
+        s3 = rotl(s3, 11)
+        v := res & m
+        while v >= n {
+            res = (rotl((s0 + s3) & MASK, 7) + s0) & MASK
+            t = (s1 << 9) & MASK
+            s2 = s2 ^ s0
+            s3 = s3 ^ s1
+            s1 = s1 ^ s2
+            s0 = s0 ^ s3
+            s2 = s2 ^ t
+            s3 = rotl(s3, 11)
+            v = res & m
+        }
+        out.push(xs[v])
         i += 1
     }
-    return (out, r)
+    return (out, Rng{s0: s0, s1: s1, s2: s2, s3: s3})
 }
 
 /// k distinct elements (like Python's `sample`): partial Fisher-Yates,
 /// so no element repeats. Returns `.none` when `k` is out of range
 /// (`k < 0` or `k > len`); `k == 0` draws `.some([])`.
+/// Draws run inline like `shuffle` (a width-1 step consumes no state,
+/// exactly as `below` does).
 
 pub func sample<T>(r: Rng, xs: [T], k: int) -> (Option<[T]>, Rng) {
     n := xs.len()
@@ -232,14 +407,45 @@ pub func sample<T>(r: Rng, xs: [T], k: int) -> (Option<[T]>, Rng) {
     for x in xs {
         pool.push(x)
     }
+    s0 := r.s0
+    s1 := r.s1
+    s2 := r.s2
+    s3 := r.s3
     i := 0
     while i < k {
-        p := below(r, n - i)
-        r = p[1]
-        j := i + p[0]
-        t := pool[i]
-        pool[i] = pool[j]
-        pool[j] = t
+        nn := n - i
+        if nn > 1 {
+            m := nn - 1
+            m |= m >> 1
+            m |= m >> 2
+            m |= m >> 4
+            m |= m >> 8
+            m |= m >> 16
+            res := (rotl((s0 + s3) & MASK, 7) + s0) & MASK
+            t := (s1 << 9) & MASK
+            s2 = s2 ^ s0
+            s3 = s3 ^ s1
+            s1 = s1 ^ s2
+            s0 = s0 ^ s3
+            s2 = s2 ^ t
+            s3 = rotl(s3, 11)
+            v := res & m
+            while v >= nn {
+                res = (rotl((s0 + s3) & MASK, 7) + s0) & MASK
+                t = (s1 << 9) & MASK
+                s2 = s2 ^ s0
+                s3 = s3 ^ s1
+                s1 = s1 ^ s2
+                s0 = s0 ^ s3
+                s2 = s2 ^ t
+                s3 = rotl(s3, 11)
+                v = res & m
+            }
+            j := i + v
+            t2 := pool[i]
+            pool[i] = pool[j]
+            pool[j] = t2
+        }
         i += 1
     }
     res:[T] = []
@@ -248,7 +454,7 @@ pub func sample<T>(r: Rng, xs: [T], k: int) -> (Option<[T]>, Rng) {
         res.push(pool[i])
         i += 1
     }
-    return (.some(res), r)
+    return (.some(res), Rng{s0: s0, s1: s1, s2: s2, s3: s3})
 }
 
 /// k draws with weights (like Python's `choices` with weights): draw i
@@ -271,12 +477,22 @@ pub func choices_weighted<T>(r: Rng, xs: [T], ws: [float], k: int) -> (Option<[T
     if total <= 0.0 {
         return (.none, r)
     }
+    s0 := r.s0
+    s1 := r.s1
+    s2 := r.s2
+    s3 := r.s3
     out:[T] = []
     i := 0
     while i < k {
-        p := f64(r)
-        r = p[1]
-        x := p[0] * total
+        res := (rotl((s0 + s3) & MASK, 7) + s0) & MASK
+        t := (s1 << 9) & MASK
+        s2 = s2 ^ s0
+        s3 = s3 ^ s1
+        s1 = s1 ^ s2
+        s0 = s0 ^ s3
+        s2 = s2 ^ t
+        s3 = rotl(s3, 11)
+        x := float(res) / 4294967296.0 * total
         j := 0
         while j < n - 1 && x >= ws[j] {
             x -= ws[j]
@@ -285,35 +501,59 @@ pub func choices_weighted<T>(r: Rng, xs: [T], ws: [float], k: int) -> (Option<[T
         out.push(xs[j])
         i += 1
     }
-    return (.some(out), r)
+    return (.some(out), Rng{s0: s0, s1: s1, s2: s2, s3: s3})
 }
 
 /// Normal draw with mean mu and stddev sigma (Box-Muller: two uniform
 /// draws per output, first kept). `sigma <= 0` draws `mu` exactly.
+/// The uniform words run inline on locals (same ops as `f64`, verified
+/// identical by test); the log/cos/sqrt tail is the true cost.
 
 pub func gauss(r: Rng, mu: float, sigma: float) -> (float, Rng) {
     if sigma <= 0.0 {
         return (mu, r)
     }
-    p := f64(r)
-    r = p[1]
-    u1 := p[0]
+    s0 := r.s0
+    s1 := r.s1
+    s2 := r.s2
+    s3 := r.s3
+    res := (rotl((s0 + s3) & MASK, 7) + s0) & MASK
+    t := (s1 << 9) & MASK
+    s2 = s2 ^ s0
+    s3 = s3 ^ s1
+    s1 = s1 ^ s2
+    s0 = s0 ^ s3
+    s2 = s2 ^ t
+    s3 = rotl(s3, 11)
+    u1 := float(res) / 4294967296.0
     while u1 <= 0.0 {
-        q := f64(r)
-        r = q[1]
-        u1 = q[0]
+        res = (rotl((s0 + s3) & MASK, 7) + s0) & MASK
+        t = (s1 << 9) & MASK
+        s2 = s2 ^ s0
+        s3 = s3 ^ s1
+        s1 = s1 ^ s2
+        s0 = s0 ^ s3
+        s2 = s2 ^ t
+        s3 = rotl(s3, 11)
+        u1 = float(res) / 4294967296.0
     }
-    q := f64(r)
-    r = q[1]
-    u2 := q[0]
+    res = (rotl((s0 + s3) & MASK, 7) + s0) & MASK
+    t = (s1 << 9) & MASK
+    s2 = s2 ^ s0
+    s3 = s3 ^ s1
+    s1 = s1 ^ s2
+    s0 = s0 ^ s3
+    s2 = s2 ^ t
+    s3 = rotl(s3, 11)
+    u2 := float(res) / 4294967296.0
     z := math.sqrt(-2.0 * math.log(u1)) * math.cos(2.0 * math.PI * u2)
-    return (mu + sigma * z, r)
+    return (mu + sigma * z, Rng{s0: s0, s1: s1, s2: s2, s3: s3})
 }
 
 /// n raw words in one call: one state to thread instead of n.
 /// The recurrence runs inline on locals (same ops as `u32`, verified
-/// identical by test), skipping the per-draw tuple: ~4x faster than n
-/// separate draws end-to-end (254ms vs 1122ms per 200k, AOT).
+/// identical by test), skipping the per-draw tuple: ~12x faster than n
+/// separate draws end-to-end (29ms vs 339ms per 200k, AOT).
 /// `n <= 0` yields an empty list.
 
 pub func fill(r: Rng, n: int) -> ([int], Rng) {
