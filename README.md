@@ -72,9 +72,12 @@ is a d6), `pick`/`sample` return `Option` instead of raising, and
 ## Correctness
 
 `seed(42)` opens `3389691633, 594985917, 4134283714…` — the reference
-stream. Ranges, weights, and shapes are covered by statistical smokes
-(±3–5σ) plus determinism checks. Streams are bit-identical across
-backends. `zz test` (from `tests/`) runs 34 checks including these vectors.
+stream, pinned word-for-word plus derived draws (`f64`, `below`,
+`randint`, `uniform`, `gauss`) in `test_reference_stream`. Uniformity
+is covered by chi-square smokes (`below` 10 buckets × 2000 draws,
+`randint` 6 faces × 600 draws, ±4.5σ bounds) alongside shape checks
+and determinism checks. Streams are bit-identical across backends.
+`zz test` (from `tests/`) runs 44 checks.
 
 ## Speed (measured)
 
