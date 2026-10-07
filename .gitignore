@@ -4,3 +4,6 @@ vendor/
 build/
 src/bin/
 *.tar.gz
+
+# bench: compiled AOT binaries
+bench/bin/

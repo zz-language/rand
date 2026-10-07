@@ -81,14 +81,29 @@ and determinism checks. Streams are bit-identical across backends.
 
 ## Speed (measured)
 
-- `u32`: ~4.5µs/draw AOT (~100–250µs in the debug VM)
-- `randint`: ~13µs/draw AOT
-- `shuffle`: ~11µs/element AOT · `sample(100)`: ~2.7ms AOT
-- `fill(200k)`: 254ms vs 1122ms sequential — ~4.4x end-to-end
+Method: `bench/bench.zz` (`cd bench && zz install`, then
+`zz run bench.zz -- N` for VM or `zz build bench.zz -o bench_aot`
++ `./bin/bench_aot -- N` for AOT). Self-timed, N=200000 AOT /
+N=500 VM, on x86_64 i3-4005U:
 
-Cost is per-draw tuple allocation and dispatch, not the algorithm
-(a dozen integer ops). AOT runs ~15–40× faster than the debug VM on
-the same program.
+| op | AOT | VM |
+|---|---|---|
+| `u32` | ~1.7µs/draw | ~116µs/draw |
+| `randint` | ~5.5µs/draw | ~200µs/draw |
+| `fill(200k)` | 29ms (~0.15µs/word) | — |
+| `draw(200k)` | ~1120ms (~5.6µs/draw) | — |
+| `shuffle(200k)` | ~1126ms (~5.6µs/elem) | — |
+| `sample(100)` over 200k | ~11ms | — |
+
+Notes:
+
+- Bulk `fill` beats a per-draw `u32` loop ~12x here (29ms vs 339ms):
+  per-draw tuple allocation and dispatch dominate, not the xoshiro
+  recurrence (a dozen integer ops).
+- `draw` costs one `randint` per element (~5.6µs): it is a
+  convenience batch, not a fast path — reach for `fill` (+ shift)
+  when bulk words are what you need.
+- AOT runs ~35–70× faster than the debug VM on draws.
 
 ## Memory (measured)
 
