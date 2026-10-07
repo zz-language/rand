@@ -93,7 +93,7 @@ N=500 VM, on x86_64 i3-4005U:
 | `u32` | ~1.7µs/draw | ~116µs/draw |
 | `randint` | ~5.5µs/draw | ~200µs/draw |
 | `fill(200k)` | 29ms (~0.15µs/word) | — |
-| `draw(200k)` | ~1120ms (~5.6µs/draw) | — |
+| `draw(200k)` | 32ms (~0.16µs/draw) | — |
 | `shuffle(200k)` | ~1126ms (~5.6µs/elem) | — |
 | `sample(100)` over 200k | ~11ms | — |
 
@@ -102,9 +102,9 @@ Notes:
 - Bulk `fill` beats a per-draw `u32` loop ~12x here (29ms vs 339ms):
   per-draw tuple allocation and dispatch dominate, not the xoshiro
   recurrence (a dozen integer ops).
-- `draw` costs one `randint` per element (~5.6µs): it is a
-  convenience batch, not a fast path — reach for `fill` (+ shift)
-  when bulk words are what you need.
+- `draw` inlines the recurrence with a hoisted mask, so bulk ranged
+  draws run at ~0.16µs/draw — on par with `fill`, ~35x faster than
+  looping `randint` (bit-identical output, pinned by test).
 - AOT runs ~35–70× faster than the debug VM on draws.
 
 ## Memory (measured)
